@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'aws/lambda/**'
+      - 'lambda/**'
       - '.github/workflows/deploy-lambda.yml'
 
 env:
@@ -40,18 +40,19 @@ jobs:
         aws-region: ${{ env.AWS_REGION }}
         
     - name: Create deployment package
-      working-directory: ./aws/lambda
       run: |
+        cd lambda
         mkdir -p package
         pip install --target ./package boto3 twilio
         cp AIponATimeCustomerCare.py package/
         cd package
         zip -r ../${{ env.LAMBDA_FUNCTION }}.zip .
+        cd ../..
         
     - name: Deploy to Lambda
-      working-directory: ./aws
       run: |
+        cd lambda
         aws lambda update-function-code \
           --function-name ${{ env.LAMBDA_FUNCTION }} \
-          --zip-file fileb://lambda/${{ env.LAMBDA_FUNCTION }}.zip \
+          --zip-file fileb://${{ env.LAMBDA_FUNCTION }}.zip \
           --region ${{ env.AWS_REGION }}
