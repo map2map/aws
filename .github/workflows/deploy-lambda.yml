@@ -71,19 +71,59 @@ jobs:
         
     - name: Deploy to Lambda
       run: |
+        set -e  # Exit immediately if a command exits with a non-zero status
+        
+        # Function to wait for any in-progress updates
+        function wait_for_update() {
+          local function_name=$1
+          local region=$2
+          local max_attempts=10
+          local delay=5
+          
+          echo "Checking for in-progress updates..."
+          for ((i=1; i<=max_attempts; i++)); do
+            status=$(aws lambda get-function --function-name $function_name --region $region --query 'Configuration.LastUpdateStatus' --output text 2>/dev/null || echo "")
+            
+            if [[ "$status" == "InProgress" ]]; then
+              echo "Update in progress, waiting $delay seconds... (Attempt $i/$max_attempts)"
+              sleep $delay
+            else
+              echo "Function is ready for update"
+              return 0
+            fi
+          done
+          
+          echo "Error: Timed out waiting for function to be ready for update"
+          return 1
+        }
+        
         cd lambda
-        # Update function code
+        
+        # Wait for any in-progress updates to complete
+        wait_for_update ${{ env.LAMBDA_FUNCTION }} ${{ env.AWS_REGION }}
+        
+        # Update function code with error handling
+        echo "Updating function code..."
         aws lambda update-function-code \
           --function-name ${{ env.LAMBDA_FUNCTION }} \
           --zip-file fileb://${{ env.LAMBDA_FUNCTION }}.zip \
-          --region ${{ env.AWS_REGION }}
-          
-        # Update function configuration to ensure correct handler and runtime
+          --region ${{ env.AWS_REGION }} \
+          || { echo "Failed to update function code"; exit 1; }
+        
+        # Wait for the code update to complete
+        sleep 5  # Short delay to ensure the update is processed
+        
+        # Verify and update function configuration
+        echo "Updating function configuration..."
         aws lambda update-function-configuration \
           --function-name ${{ env.LAMBDA_FUNCTION }} \
           --handler AIponATimeCustomerCare.lambda_function.lambda_handler \
           --runtime ${{ env.LAMBDA_RUNTIME }} \
-          --region ${{ env.AWS_REGION }}
-          
+          --region ${{ env.AWS_REGION }} \
+          || { echo "Failed to update function configuration"; exit 1; }
+        
         # Verify the function was updated
+        echo "Verifying deployment..."
         aws lambda get-function --function-name ${{ env.LAMBDA_FUNCTION }} --region ${{ env.AWS_REGION }} | jq .Configuration.Handler
+        
+        echo "Deployment completed successfully!"
