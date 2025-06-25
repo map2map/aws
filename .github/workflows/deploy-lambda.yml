@@ -42,17 +42,48 @@ jobs:
     - name: Create deployment package
       run: |
         cd lambda
+        
+        # Create a clean package directory
+        rm -rf package
         mkdir -p package
+        
+        # Copy the Lambda function package
+        cp -r AIponATimeCustomerCare package/
+        
+        # Install dependencies
         pip install --target ./package boto3 twilio
-        cp AIponATimeCustomerCare.py package/
+        
+        # Create the zip file with the correct structure
         cd package
         zip -r ../${{ env.LAMBDA_FUNCTION }}.zip .
-        cd ../..
+        
+        # Create a zip with just the function for debugging
+        cd ..
+        zip -j ${{ env.LAMBDA_FUNCTION }}-function.zip AIponATimeCustomerCare/lambda_function.py
+        
+        # List files for debugging
+        echo "=== Current directory structure ==="
+        find . -type f | sort
+        echo "=== Package directory contents ==="
+        find package -type f | sort
+        
+        cd ..
         
     - name: Deploy to Lambda
       run: |
         cd lambda
+        # Update function code
         aws lambda update-function-code \
           --function-name ${{ env.LAMBDA_FUNCTION }} \
           --zip-file fileb://${{ env.LAMBDA_FUNCTION }}.zip \
           --region ${{ env.AWS_REGION }}
+          
+        # Update function configuration to ensure correct handler and runtime
+        aws lambda update-function-configuration \
+          --function-name ${{ env.LAMBDA_FUNCTION }} \
+          --handler AIponATimeCustomerCare.lambda_function.lambda_handler \
+          --runtime ${{ env.LAMBDA_RUNTIME }} \
+          --region ${{ env.AWS_REGION }}
+          
+        # Verify the function was updated
+        aws lambda get-function --function-name ${{ env.LAMBDA_FUNCTION }} --region ${{ env.AWS_REGION }} | jq .Configuration.Handler
